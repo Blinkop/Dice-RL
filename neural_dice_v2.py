@@ -51,7 +51,7 @@ class ValueNetwork(nn.Module):
             self._torch_generator.seed()
 
         layers = [
-            nn.Linear(state_dim + action_dim, hidden_dim),
+            nn.Linear(state_dim, hidden_dim),
             nn.ReLU()
         ]
 
@@ -59,7 +59,7 @@ class ValueNetwork(nn.Module):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(nn.ReLU())
 
-        layers.append(nn.Linear(hidden_dim, 1))
+        layers.append(nn.Linear(hidden_dim, action_dim))
         if squared_output:
             layers.append(SquaredActivation())
 
@@ -78,16 +78,11 @@ class ValueNetwork(nn.Module):
                     param.data, generator=self._torch_generator
                 )
 
-    def forward(self, states, actions):
-        if states.shape[0] != actions.shape[0]:
-            raise ValueError(f'There must be the same batch size of states and actions')
-        
-        if len(states.shape) != 2 or len(actions.shape) != 2:
-            raise ValueError(f'every state and action must be 1d vector')
+    def forward(self, states):
+        if len(states.shape) != 2:
+            raise ValueError(f'every state must be 1d vector')
 
-        state_action = torch.concat([states, actions], dim=1)
-
-        return self._network(state_action)
+        return self._network(states)
 
 
 class NeuralDice(object):
@@ -154,30 +149,12 @@ class NeuralDice(object):
 
         if self._num_action_samples is None:
             action_weights = policy.action_dist(state=states) # (B, NUM_ACTIONS)
-            actions = torch.tile(
-                torch.arange(self._num_actions),
-                dims=(batch_size, 1)
-            ).to(self._device) # (B, NUM_ACTIONS)
         else:
             action_weights = (1 / self._num_action_samples) *\
                 torch.ones((batch_size, self._num_action_samples)).to(self._device) # (B, A)
-            actions = torch.concat([
-                policy.select_action(state=states).reshape(-1, 1)
-                for _ in range(self._num_action_samples)
-            ], dim=1) # (B, A)
 
         # if weighting by policy.action_dist, then A = NUM_ACTIONS
-        actions_flatten = actions.flatten() # (B, A) -> (B*A)
-        actions_flatten = F.one_hot(
-            actions_flatten, self._num_actions
-        ).to(self._device) # (B*A) -> (B*A, NUM_ACTIONS)
-        states_flatten = states.repeat(1, action_weights.shape[1])\
-            .reshape(-1, states.shape[1])\
-            .to(self._device) # (B, S) -> (B*A, S)
-
-        values = self._nu_network(states_flatten, actions_flatten)\
-            .reshape(batch_size, -1) # (B, A)
-
+        values = self._nu_network(states) # (B, A)
         value_expectation = values * action_weights
 
         return value_expectation.sum(dim=1) # (B,)
@@ -206,12 +183,14 @@ class NeuralDice(object):
         step_num: torch.Tensor,
         policy: Policy
     ):
-        current_action = F.one_hot(current_action, self._num_actions).to(self._device)
-
         nu_first_values = self.nu_value_expectation(states=first_state, policy=policy).flatten() # (B,)
-        nu_current_values = self._nu_network(current_state, current_action).flatten() # (B,)
+        nu_current_values = self._nu_network(current_state)\
+            .gather(1, current_action.view(-1, 1))\
+            .flatten() # (B,)
         nu_next_values = self.nu_value_expectation(states=next_state, policy=policy).flatten() # (B,)
-        zeta_current_values = self._zeta_network(current_state, current_action).flatten() # (B,)
+        zeta_current_values = self._zeta_network(current_state)\
+            .gather(1, current_action.view(-1, 1))\
+            .flatten() # (B,)
 
         # discount = self._gamma ** step_num # (B,)
         discount = self._gamma
@@ -293,7 +272,9 @@ class NeuralDice(object):
         self._zeta_network.eval()
 
         with torch.no_grad():
-            weights = self._zeta_network(states, actions).flatten()
+            weights = self._zeta_network(states)\
+                .gather(1, actions.view(-1 ,1))\
+                .flatten()
             result = torch.sum(weights * rewards).detach().cpu()
 
         return result.item()

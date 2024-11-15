@@ -54,7 +54,7 @@ class MovieLensBasicMDP(IterableDataset):
     def generate(self):
         while True:
             first_item_idx = np.random.choice(
-                self.first_items.shape[0], self._num_samples, replace=False)
+                self.first_items.shape[0], self._num_samples, replace=True)
             state_action_idx = np.random.choice(
                 self.states_acitons.shape[0], self._num_samples, replace=False)
 
@@ -64,7 +64,7 @@ class MovieLensBasicMDP(IterableDataset):
 
             first_states = F.one_hot(first_items, self._num_items).float()
             states = F.one_hot(states_actions[:, 0], self._num_items).float()
-            actions = states_actions[:, 1]
+            actions = states_actions[:, 1].long()
             next_states = F.one_hot(actions, self._num_items).float()
             rewards = torch.ones(states.shape[0]).float()
 
@@ -82,7 +82,7 @@ class MovieLensBasicMDP(IterableDataset):
         for i in range(0, data_size, batch_size):
             idx = torch.arange(start=i, end=min(i+batch_size, data_size))
             states = F.one_hot(s[idx], self._num_items).float()
-            actions = F.one_hot(a[idx], self._num_items).float()
+            actions = a[idx].long()
             rewards = torch.ones(states.shape[0]).float()
 
             yield states, actions, rewards
