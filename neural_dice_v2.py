@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional
+from typing import Optional, Type
 
 import torch
 import torch.nn as nn
@@ -39,7 +39,7 @@ class ValueNetwork(nn.Module):
         state_dim: int,
         action_dim: int,
         hidden_dim: int,
-        squared_output: bool = True,
+        output_activation: Type[nn.Module] = None,
         seed: int = None
     ):
         super().__init__()
@@ -60,8 +60,8 @@ class ValueNetwork(nn.Module):
             layers.append(nn.ReLU())
 
         layers.append(nn.Linear(hidden_dim, action_dim))
-        if squared_output:
-            layers.append(SquaredActivation())
+        if output_activation is not None:
+            layers.append(output_activation())
 
         self._network = nn.Sequential(*layers)
 
@@ -113,10 +113,10 @@ class NeuralDice(object):
 
         self._nu_network = nu_network
         self._zeta_network = zeta_network
-        # self._lambda = nn.Parameter(data=torch.Tensor([0.0]).to(self._device))
+        self._lambda = nn.Parameter(data=torch.tensor(0.0).to(self._device))
         self._nu_optimizer = Adam(list(self._nu_network.parameters()), lr=nu_lr)
         self._zeta_optimizer = Adam(list(self._zeta_network.parameters()), lr=zeta_lr)
-        # self._lambda_optimizer = Adam([self._lambda], lr=lambda_lr)
+        self._lambda_optimizer = Adam([self._lambda], lr=lambda_lr)
 
         self._zero_reward = zero_reward
         self._primal_form = primal_form
@@ -196,21 +196,21 @@ class NeuralDice(object):
         discount = self._gamma
 
         bellman_residuals = discount * nu_next_values\
-            - nu_current_values# - self._norm_regularizer * self._lambda
+            - nu_current_values - self._norm_regularizer * self._lambda
         
         if not self._zero_reward:
             bellman_residuals += rewards
 
         zeta_loss = -zeta_current_values * bellman_residuals
         nu_loss = (1 - self._gamma) * nu_first_values
-        # lambda_loss = self._norm_regularizer * self._lambda
+        lambda_loss = self._norm_regularizer * self._lambda
 
         if self._primal_form:
             nu_loss += self._f_star_fn(bellman_residuals)
-            # lambda_loss += self._f_star_fn(bellman_residuals)
+            lambda_loss += self._f_star_fn(bellman_residuals)
         else:
             nu_loss += zeta_current_values * bellman_residuals
-            # lambda_loss -= self._norm_regularizer * zeta_current_values * self._lambda
+            lambda_loss = lambda_loss - self._norm_regularizer * self._lambda * zeta_current_values
 
         nu_loss += self._primal_regularizer * self._f_fn(nu_current_values)
         zeta_loss += self._dual_regularizer * self._f_fn(zeta_current_values)
@@ -221,7 +221,7 @@ class NeuralDice(object):
             nu_loss *= weights
             zeta_loss *= weights
 
-        return nu_loss.mean(), zeta_loss.mean()
+        return nu_loss.mean(), zeta_loss.mean(), lambda_loss.mean()
 
     def train_batch(self, batch, policy: Policy):
         self._nu_network.train()
@@ -236,7 +236,7 @@ class NeuralDice(object):
             step_num # (B,)
         ) = batch
 
-        nu_loss, zeta_loss = self.train_loss(
+        nu_loss, zeta_loss, lambda_loss = self.train_loss(
             first_state=first_state,
             current_state=current_state,
             current_action=current_action,
@@ -253,14 +253,17 @@ class NeuralDice(object):
 
         self._nu_optimizer.zero_grad()
         self._zeta_optimizer.zero_grad()
+        self._lambda_optimizer.zero_grad()
 
         nu_loss.backward(retain_graph=True)
-        zeta_loss.backward()
+        zeta_loss.backward(retain_graph=True)
+        lambda_loss.backward()
 
         self._nu_optimizer.step()
         self._zeta_optimizer.step()
+        self._lambda_optimizer.step()
 
-        return nu_loss.item(), zeta_loss.item()
+        return nu_loss.item(), zeta_loss.item(), lambda_loss.item()
 
     def estimate_average_reward(
         self,
