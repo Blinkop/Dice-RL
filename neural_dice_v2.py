@@ -200,7 +200,7 @@ class NeuralDice(object):
         if not self._zero_reward:
             bellman_residuals += rewards
 
-        zeta_loss = -zeta_current_values * bellman_residuals
+        zeta_loss = zeta_current_values * bellman_residuals
         nu_loss = (1 - self._gamma) * nu_first_values
         lambda_loss = self._norm_regularizer * self._lambda
 
@@ -208,7 +208,7 @@ class NeuralDice(object):
             nu_loss += self._f_star_fn(bellman_residuals)
             lambda_loss += self._f_star_fn(bellman_residuals)
         else:
-            nu_loss += zeta_current_values * bellman_residuals
+            nu_loss -= zeta_current_values * bellman_residuals
             lambda_loss = (
                 lambda_loss
                 - self._norm_regularizer * self._lambda * zeta_current_values
