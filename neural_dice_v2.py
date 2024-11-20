@@ -149,12 +149,16 @@ class NeuralDice(object):
 
         if self._num_action_samples is None:
             action_weights = policy.action_dist(state=states) # (B, NUM_ACTIONS)
+            values = self._nu_network(states) # (B, NUM_ACTIONS)
         else:
             action_weights = (1 / self._num_action_samples) *\
                 torch.ones((batch_size, self._num_action_samples)).to(self._device) # (B, A)
-
-        # if weighting by policy.action_dist, then A = NUM_ACTIONS
-        values = self._nu_network(states) # (B, A)
+            actions = torch.concat([
+                policy.select_action(state=states).reshape(-1, 1)
+                for _ in range(self._num_action_samples)
+            ], dim=1) # (B, A)
+            values = self._nu_network(states).gather(1, actions) # (B, A)
+        
         value_expectation = values * action_weights
 
         return value_expectation.sum(dim=1) # (B,)
@@ -181,6 +185,7 @@ class NeuralDice(object):
         next_state: torch.Tensor,
         rewards: torch.Tensor,
         step_num: torch.Tensor,
+        has_next: torch.Tensor,
         policy: Policy
     ):
         nu_first_values = self.nu_value_expectation(states=first_state, policy=policy).flatten() # (B,)
@@ -192,8 +197,7 @@ class NeuralDice(object):
             .gather(1, current_action.view(-1, 1))\
             .flatten() # (B,)
 
-        # discount = self._gamma ** step_num # (B,)
-        discount = self._gamma
+        discount = self._gamma * has_next
 
         bellman_residuals = discount * nu_next_values\
             - nu_current_values - self._norm_regularizer * self._lambda
@@ -233,7 +237,8 @@ class NeuralDice(object):
             current_action, # (B,)
             next_state, # (B, S)
             rewards, # (B,)
-            step_num # (B,)
+            step_num, # (B,)
+            has_next # (B,)
         ) = batch
 
         nu_loss, zeta_loss, lambda_loss = self.train_loss(
@@ -243,6 +248,7 @@ class NeuralDice(object):
             next_state=next_state,
             rewards=rewards,
             step_num=step_num,
+            has_next=has_next,
             policy=policy
         )
 
