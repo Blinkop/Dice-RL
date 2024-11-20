@@ -156,3 +156,5 @@ cython_debug/
 
 # my stuff
 *.npy
+experiments
+sandbox.ipynb
