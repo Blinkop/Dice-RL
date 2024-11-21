@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from tqdm import tqdm
 
 from typing import List
@@ -8,23 +9,45 @@ import torch.nn.functional as F
 from torch.utils.data import IterableDataset, get_worker_info
 
 
-def transform_indices(data, users, items):
-    data_index = {}
-    for entity, field in zip(['users', 'items'], [users, items]):
-        idx, idx_map = to_numeric_id(data, field)
-        data_index[entity] = idx_map
-        data.loc[:, field] = idx
-    return data, data_index
+class AbstractDataset(IterableDataset):
+    def __init__(self):
+        super().__init__()
+
+    @property
+    @abstractmethod
+    def state_dim(self):
+        raise NotImplementedError()
+
+    @property
+    @abstractmethod
+    def num_users(self):
+        raise NotImplementedError()
+    
+    @property
+    @abstractmethod
+    def num_items(self):
+        raise NotImplementedError()
+    
+    @property
+    @abstractmethod
+    def items_count(self):
+        raise NotImplementedError()
+
+    @abstractmethod
+    def iterate_dataset(self):
+        raise NotImplementedError()
 
 
-def to_numeric_id(data, field):
-    idx_data = data[field].astype("category")
-    idx = idx_data.cat.codes
-    idx_map = idx_data.cat.categories.rename(field)
-    return idx, idx_map
+class MovieLens(AbstractDataset):
+    def __init__(
+        self,
+        num_samples: int,
+        file_path: str = './data/ml-1m.zip',
+    ):
+        super().__init__()
 
 
-class MovieLensBasicMDP(IterableDataset):
+class MovieLensBasicMDP(AbstractDataset):
     def __init__(
         self,
         num_items: int,
@@ -36,6 +59,7 @@ class MovieLensBasicMDP(IterableDataset):
         self._num_items = num_items
         self._num_samples = num_samples
         self._num_users = len(user_sequences)
+        self._items_count = np.unique(np.concatenate(user_sequences), return_counts=True)[1]
 
         if num_samples > self._num_users:
             raise ValueError('num samples must be <= number of users')
@@ -57,13 +81,30 @@ class MovieLensBasicMDP(IterableDataset):
 
         self._states_acitons = np.array(states_acitons)
 
+    @property
+    def state_dim(self):
+        return self._num_items
+
+    @property
+    def num_users(self):
+        return self._num_users
+    
+    @property
+    def num_items(self):
+        return self._num_items
+
+    @property
+    def items_count(self):
+        return self._items_count
+
     def generate(self):
         numpy_generator = np.random.default_rng(get_worker_info().seed)
 
         while True:
-            first_items = np.zeros(self._num_samples)
-            items = np.zeros(self._num_samples)
-            next_items = np.zeros(self._num_samples)
+            first_states = np.zeros(self._num_samples)
+            current_states = np.zeros(self._num_samples)
+            actions = np.zeros(self._num_samples)
+            next_states = np.zeros(self._num_samples)
             step_num = np.zeros(self._num_samples)
             has_next = np.ones(self._num_samples)
 
@@ -74,27 +115,26 @@ class MovieLensBasicMDP(IterableDataset):
                 seq = self._user_sequences[idx]
                 pos = numpy_generator.integers(0, self._seq_lengths[idx]-1)
 
-                first_items[i] = seq[0]
-                items[i] = seq[pos]
-                next_items[i] = seq[pos+1]
+                first_states[i] = seq[0]
+                current_states[i] = seq[pos]
+                actions[i] = seq[pos+1]
+                next_states[i] = seq[pos+1]
                 step_num[i] = pos
                 if (pos+2) == self._seq_lengths[idx]:
                     has_next[i] = 0.0
 
-            first_items = torch.LongTensor(first_items)
-            items = torch.LongTensor(items)
-            next_items = torch.LongTensor(next_items)
-            step_num = torch.LongTensor(step_num)
-            has_next = torch.FloatTensor(has_next)
+            first_states = torch.LongTensor(first_states)
+            current_states = torch.LongTensor(current_states)
+            next_states = torch.LongTensor(next_states)
 
             yield (
-                F.one_hot(first_items, self._num_items).float(),
-                F.one_hot(items, self._num_items).float(),
-                next_items,
-                F.one_hot(next_items, self._num_items).float(),
+                F.one_hot(first_states, self._num_items).float(),
+                F.one_hot(current_states, self._num_items).float(),
+                torch.LongTensor(actions),
+                F.one_hot(next_states, self._num_items).float(),
                 torch.ones(self._num_samples).float(),
-                step_num,
-                has_next
+                torch.LongTensor(step_num),
+                torch.FloatTensor(has_next)
             )
 
     def __iter__(self):
@@ -115,7 +155,7 @@ class MovieLensBasicMDP(IterableDataset):
             yield states, actions, rewards
 
 
-class MovieLensSasrecMDP(IterableDataset):
+class MovieLensSasrecMDP(AbstractDataset):
     def __init__(
         self,
         num_items: int,
@@ -130,6 +170,7 @@ class MovieLensSasrecMDP(IterableDataset):
         self._num_items = num_items
         self._num_samples = num_samples
         self._num_users = len(user_sequences)
+        self._items_count = np.unique(np.concatenate(user_sequences), return_counts=True)[1]
 
         if num_samples > self._num_users:
             raise ValueError('num samples must be <= number of users')
@@ -162,8 +203,6 @@ class MovieLensSasrecMDP(IterableDataset):
 
         if embeddings_path is not None:
             self._states = torch.load(embeddings_path)
-
-        self.state_dim = self._states[0][0].shape[0]
         
         # prefetch every (s,a) pair for evaluation
         eval_acitons = []
@@ -175,6 +214,22 @@ class MovieLensSasrecMDP(IterableDataset):
 
         self._eval_actions = np.array(eval_acitons)
         self._eval_states = torch.stack(eval_states)
+
+    @property
+    def state_dim(self):
+        return self._states[0][0].shape[0]
+
+    @property
+    def num_users(self):
+        return self._num_users
+    
+    @property
+    def num_items(self):
+        return self._num_items
+
+    @property
+    def items_count(self):
+        return self._items_count
 
     def generate(self):
         numpy_generator = np.random.default_rng(get_worker_info().seed)
