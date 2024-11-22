@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from neural_dice import ValueNetwork, NeuralDice, SquaredActivation
-from policy import RandomPolicy, PopularRandomPolicy, SASRec
+from policy import RandomPolicy, PopularRandomPolicy, SASRec, SASRecPrecalc
 from data import MovieLens, AbstractDataset
 from data_utils import custom_collate
 from utils import move_to_device
@@ -71,17 +71,24 @@ def create_dataset(args: Namespace):
             num_samples=args.num_episodes,
             state_source='basic',
             policy=args.policy,
-            file_path='./data/ml-1m.zip'
+            policy_path=None,
+            precalc_path='./models/sasrec_action_dist.pt',
+            state_model_path=None,
+            states_path=None,
+            file_path='./data/ml-1m.zip',
+            device=device
         )
     elif args.dataset == 'movielens_sasrec':
         dataset = MovieLens(
             num_samples=args.num_episodes,
             state_source='sasrec',
             policy=args.policy,
-            file_path='./data/ml-1m.zip',
-            state_model_path='./models/sasrec.pt',
+            policy_path=None,
+            precalc_path='./models/sasrec_action_dist.pt',
+            state_model_path=None,
             states_path='./models/sasrec_ml_states.pt',
-            state_model_device=device
+            file_path='./data/ml-1m.zip',
+            device=device
         )
     else:
         raise ValueError(f'Unknown dataset "{args.dataset}"')
@@ -108,6 +115,10 @@ def create_policy(args: Namespace, dataset: AbstractDataset):
         policy = SASRec(
             model_path='./models/sasrec.pt',
             num_items=dataset.num_items,
+            device=device
+        )
+    elif args.policy == 'sasrec_precalc':
+        policy = SASRecPrecalc(
             device=device
         )
     else:

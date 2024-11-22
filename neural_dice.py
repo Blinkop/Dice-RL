@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Type, List
+from typing import Optional, Type, List, Union
 
 import torch
 import torch.nn as nn
@@ -119,18 +119,18 @@ class NeuralDice(object):
             list(self._zeta_network.parameters()), lr=zeta_lr, maximize=True)
         self._lambda_optimizer = Adam([self._lambda], lr=lambda_lr)
 
-        self._nu_lr_scheduler = CosineAnnealingLR(
-            optimizer=self._nu_optimizer,
-            T_max=1000
-        )
-        self._zeta_lr_scheduler = CosineAnnealingLR(
-            optimizer=self._zeta_optimizer,
-            T_max=1000
-        )
-        self._lambda_lr_scheduler = CosineAnnealingLR(
-            optimizer=self._lambda_optimizer,
-            T_max=1000
-        )
+        # self._nu_lr_scheduler = CosineAnnealingLR(
+        #     optimizer=self._nu_optimizer,
+        #     T_max=1000
+        # )
+        # self._zeta_lr_scheduler = CosineAnnealingLR(
+        #     optimizer=self._zeta_optimizer,
+        #     T_max=1000
+        # )
+        # self._lambda_lr_scheduler = CosineAnnealingLR(
+        #     optimizer=self._lambda_optimizer,
+        #     T_max=1000
+        # )
 
         self._zero_reward = zero_reward
         self._weight_by_gamma = weight_by_gamma
@@ -157,7 +157,7 @@ class NeuralDice(object):
         self,
         states: torch.Tensor,
         policy: Policy,
-        inputs: List
+        inputs: Union[List, torch.Tensor]
     ):
         batch_size = states.shape[0]
 
@@ -180,11 +180,11 @@ class NeuralDice(object):
     def train_loss(
         self,
         first_state: torch.Tensor,
-        first_policy_inputs: List,
+        first_policy_inputs: Union[List, torch.Tensor],
         current_state: torch.Tensor,
         current_action: torch.Tensor,
         next_state: torch.Tensor,
-        next_policy_inputs: List,
+        next_policy_inputs: Union[List, torch.Tensor],
         rewards: torch.Tensor,
         step_num: torch.Tensor,
         has_next: torch.Tensor,
@@ -275,9 +275,9 @@ class NeuralDice(object):
         self._zeta_optimizer.step()
         self._lambda_optimizer.step()
 
-        self._nu_lr_scheduler.step()
-        self._zeta_lr_scheduler.step()
-        self._lambda_lr_scheduler.step()
+        # self._nu_lr_scheduler.step()
+        # self._zeta_lr_scheduler.step()
+        # self._lambda_lr_scheduler.step()
 
         return loss.item()
 

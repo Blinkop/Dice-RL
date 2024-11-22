@@ -15,8 +15,11 @@ class Policy(object):
         self.policy_name = name
         self._device = device
 
-    def _get_batch_size(self, state: List):
-        return len(state)
+    def _get_batch_size(self, state):
+        if isinstance(state, list):
+            return len(state)
+        elif torch.is_tensor(state):
+            return state.shape[0]
 
     @abc.abstractmethod
     def select_action(self, state):
@@ -55,7 +58,7 @@ class RandomPolicy(AbstractRandomPolicy):
 
         self._num_actions = num_actions
 
-    def select_action(self, state: List):
+    def select_action(self, state):
         batch_size = self._get_batch_size(state)
 
         return torch.randint(
@@ -65,7 +68,7 @@ class RandomPolicy(AbstractRandomPolicy):
             generator=self._torch_generator
         ).to(self._device)
     
-    def action_dist(self, state: List):
+    def action_dist(self, state):
         batch_size = self._get_batch_size(state)
 
         action_dist = (1 / self._num_actions) * torch.ones((batch_size, self._num_actions))
@@ -85,7 +88,7 @@ class PopularRandomPolicy(AbstractRandomPolicy):
 
         self._items_dist = torch.FloatTensor(items_count) / sum(items_count)
 
-    def select_action(self, state: List):
+    def select_action(self, state):
         batch_size = self._get_batch_size(state)
 
         return self._items_dist.multinomial(
@@ -94,7 +97,7 @@ class PopularRandomPolicy(AbstractRandomPolicy):
             generator=self._torch_generator
         ).to(self._device)
     
-    def action_dist(self, state: List):
+    def action_dist(self, state):
         batch_size = self._get_batch_size(state)
 
         return self._items_dist.repeat(batch_size, 1).to(self._device)
@@ -117,7 +120,7 @@ class SASRec(Policy):
     def select_action(self, state: List):
         actions = []
         for s in state:
-            logits = self._sasrec.score_with_state(s)[0].flatten()
+            logits = self._sasrec.score_with_state(s)[0].flatten().detach()
             actions.append(logits.argmax().item())
 
         return torch.LongTensor(actions).to(self._device)
@@ -125,9 +128,24 @@ class SASRec(Policy):
     def action_dist(self, state: List):
         actions = []
         for s in state:
-            logits = self._sasrec.score_with_state(s)[0].flatten()
+            logits = self._sasrec.score_with_state(s)[0].flatten().detach()
             actions.append(logits.argmax().item())
 
         actions = torch.LongTensor(actions)
 
         return F.one_hot(actions, self._num_items).float().to(self._device)
+
+
+class SASRecPrecalc(Policy):
+    def __init__(
+        self,
+        device=torch.device('cuda:0'),
+        name='sasrec_precalc',
+    ):
+        super().__init__(device=device, name=name)
+
+    def select_action(self, state):
+        return state.to(self._device)
+    
+    def action_dist(self, state):
+        return state.to(self._device)

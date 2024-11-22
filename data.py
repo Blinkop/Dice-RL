@@ -47,10 +47,12 @@ class MovieLens(AbstractDataset):
         num_samples: int,
         state_source: str = 'basic',
         policy: str = 'random',
+        policy_path: str = './models/sasrec.pt',
+        precalc_path: str = './models/sasrec_action_dist.pt',
         state_model_path: str = None,
         states_path: str = None,
         file_path: str = './data/ml-1m.zip',
-        state_model_device: torch.device = torch.device('cpu')
+        device: torch.device = torch.device('cpu')
     ):
         super().__init__()
 
@@ -59,7 +61,7 @@ class MovieLens(AbstractDataset):
         self._policy = policy
         if self._state_source not in ['basic', 'sasrec']:
             raise ValueError(f'unknown state source "{self._state_source}"')
-        if self._policy not in ['random', 'poprandom', 'sasrec']:
+        if self._policy not in ['random', 'poprandom', 'sasrec', 'sasrec_precalc']:
             raise ValueError(f'unknown policy "{self._policy}"')
 
         (
@@ -99,7 +101,14 @@ class MovieLens(AbstractDataset):
             self._states = self._create_sasrec_states(
                 sasrec_path=state_model_path,
                 states_path=states_path,
-                device=state_model_device
+                device=device
+            )
+
+        if policy == 'sasrec_precalc':
+            self._action_dist = self._sasrec_precalculate(
+                sasrec_path=policy_path,
+                precalc_path=precalc_path,
+                device=device
             )
 
         # prefetch every (s,a) pair for evaluation
@@ -119,6 +128,37 @@ class MovieLens(AbstractDataset):
         elif self._state_source == 'basic':
             self._eval_states = np.array(eval_states)
 
+    @torch.no_grad()
+    def _sasrec_precalculate(
+        self,
+        sasrec_path: str,
+        precalc_path: str,
+        device: torch.device
+    ):
+        if precalc_path is not None and os.path.isfile(precalc_path):
+            return torch.load(precalc_path)
+
+        sasrec = torch.load(sasrec_path).to(device)
+        sasrec.eval()
+
+        action_dist = {}
+
+        for u, seq in tqdm(self._user_sequences.items()):
+            action_dist[u] = []
+
+            for i in range(1, len(seq)+1):
+                s = torch.LongTensor(seq[:i]).to(device)
+                logits = sasrec.score_with_state(s)[0].flatten().detach().cpu()
+                dist = torch.zeros(self.num_items)
+                dist[logits.argmax().item()] = 1.0
+                action_dist[u].append(dist)
+
+        if precalc_path is not None:
+            torch.save(action_dist, precalc_path)
+
+        return action_dist
+
+    @torch.no_grad()
     def _create_sasrec_states(
         self,
         sasrec_path: str,
@@ -145,11 +185,10 @@ class MovieLens(AbstractDataset):
         for u, seq in tqdm(inference_sequences.items()):
             train_seq_len = len(seq) - len(self._user_sequences[u])
 
-            with torch.no_grad():
-                states[u] = []
-                for i in range(train_seq_len+1, len(seq)+1):
-                    s = torch.LongTensor(seq[:i]).to(device)
-                    states[u].append(sasrec.score_with_state(s)[-1].cpu())
+            states[u] = []
+            for i in range(train_seq_len+1, len(seq)+1):
+                s = torch.LongTensor(seq[:i]).to(device)
+                states[u].append(sasrec.score_with_state(s)[-1].detach().cpu())
 
         if states_path is not None:
             torch.save(states, states_path)
@@ -204,7 +243,8 @@ class MovieLens(AbstractDataset):
             return None
         elif self._policy == 'sasrec':
             return torch.LongTensor(seq[:pos+1])
-        
+        elif self._policy == 'sasrec_precalc':
+            return self._action_dist[uid][pos]
 
     def _generate_sasrec(self):
         numpy_generator = np.random.default_rng(get_worker_info().seed)
@@ -226,10 +266,10 @@ class MovieLens(AbstractDataset):
                 pos = numpy_generator.integers(0, len(seq)-1)
 
                 first_states.append(self._states[idx][0])
-                first_inputs.append(self._create_policy_input(i, 0, seq))
+                first_inputs.append(self._create_policy_input(idx, 0, seq))
                 current_states.append(self._states[idx][pos])
                 next_states.append(self._states[idx][pos+1])
-                next_inputs.append(self._create_policy_input(i, pos+1, seq))
+                next_inputs.append(self._create_policy_input(idx, pos+1, seq))
                 actions[i] = seq[pos+1]
                 step_num[i] = pos
                 if (pos+2) == len(seq):
@@ -237,11 +277,11 @@ class MovieLens(AbstractDataset):
 
             yield (
                 torch.stack(first_states),
-                first_inputs,
+                first_inputs if self._policy == 'sasrec' else torch.stack(first_inputs),
                 torch.stack(current_states),
                 torch.LongTensor(actions),
                 torch.stack(next_states),
-                next_inputs,
+                next_inputs if self._policy == 'sasrec' else torch.stack(next_inputs),
                 torch.ones(self._num_samples).float(),
                 torch.LongTensor(step_num),
                 torch.FloatTensor(has_next)
@@ -267,11 +307,11 @@ class MovieLens(AbstractDataset):
                 pos = numpy_generator.integers(0, len(seq)-1)
 
                 first_states[i] = seq[0]
-                first_inputs.append(self._create_policy_input(i, 0, seq))
+                first_inputs.append(self._create_policy_input(idx, 0, seq))
                 current_states[i] = seq[pos]
                 actions[i] = seq[pos+1]
                 next_states[i] = seq[pos+1]
-                next_inputs.append(self._create_policy_input(i, pos+1, seq))
+                next_inputs.append(self._create_policy_input(idx, pos+1, seq))
                 step_num[i] = pos
                 if (pos+2) == len(seq):
                     has_next[i] = 0.0

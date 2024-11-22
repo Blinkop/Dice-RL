@@ -73,24 +73,32 @@ def custom_collate(data_list):
     step_num = []
     has_next = []
 
+    inputs_are_tensors = torch.is_tensor(data_list[0][1])
+
     for fs, fi, cs, ca, ns, ni, rw, sn, hn in data_list:
         first_state.append(fs)
-        first_inputs += fi
+        if inputs_are_tensors:
+            first_inputs.append(fi)
+        else:
+            first_inputs += fi
         current_state.append(cs)
         current_action.append(ca)
         next_state.append(ns)
-        next_inputs += ni
+        if inputs_are_tensors:
+            next_inputs.append(ni)
+        else:
+            next_inputs += ni
         rewards.append(rw)
         step_num.append(sn)
         has_next.append(hn)
 
     return (
         torch.concat(first_state, dim=0),
-        first_inputs,
+        torch.concat(first_inputs, dim=0) if inputs_are_tensors else first_inputs,
         torch.concat(current_state, dim=0),
         torch.concat(current_action, dim=0),
         torch.concat(next_state, dim=0),
-        next_inputs,
+        torch.concat(next_inputs, dim=0) if inputs_are_tensors else next_inputs,
         torch.concat(rewards, dim=0),
         torch.concat(step_num, dim=0),
         torch.concat(has_next, dim=0)
