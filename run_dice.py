@@ -5,15 +5,15 @@ from pathlib import Path
 from tqdm import tqdm
 
 import numpy as np
-import pandas as pd
 
 import torch
 from torch.utils.data import DataLoader
 
 from neural_dice import ValueNetwork, NeuralDice, SquaredActivation
-from policy import RandomPolicy, PopularRandomPolicy
-from data import AbstractDataset
-from data_utils import movielens_dataset, custom_collate
+from policy import RandomPolicy, PopularRandomPolicy, SASRec
+from data import MovieLens, AbstractDataset
+from data_utils import custom_collate
+from utils import move_to_device
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -67,12 +67,21 @@ def create_dataset(args: Namespace):
     device = torch.device(args.device)
 
     if args.dataset == 'movielens_basic':
-        dataset = movielens_dataset(
-            num_samples=args.num_episodes, sasrec_states=False, device=None
+        dataset = MovieLens(
+            num_samples=args.num_episodes,
+            state_source='basic',
+            policy=args.policy,
+            file_path='./data/ml-1m.zip'
         )
     elif args.dataset == 'movielens_sasrec':
-        dataset = movielens_dataset(
-            num_samples=args.num_episodes, sasrec_states=True, device=device
+        dataset = MovieLens(
+            num_samples=args.num_episodes,
+            state_source='sasrec',
+            policy=args.policy,
+            file_path='./data/ml-1m.zip',
+            state_model_path='./models/sasrec.pt',
+            states_path='./models/sasrec_ml_states.pt',
+            state_model_device=device
         )
     else:
         raise ValueError(f'Unknown dataset "{args.dataset}"')
@@ -87,15 +96,19 @@ def create_policy(args: Namespace, dataset: AbstractDataset):
         policy = RandomPolicy(
             num_actions=dataset.num_items,
             device=device,
-            name='random',
             seed=args.seed
         )
-    elif args.policy == 'randompop':
+    elif args.policy == 'poprandom':
         policy = PopularRandomPolicy(
             items_count=dataset.items_count,
             device=device,
-            name='pop_random',
             seed=args.seed
+        )
+    elif args.policy == 'sasrec':
+        policy = SASRec(
+            model_path='./models/sasrec.pt',
+            num_items=dataset.num_items,
+            device=device
         )
     else:
         raise ValueError(f'Unknown policy "{args.policy}"')
@@ -152,7 +165,7 @@ def estimate_policy(dice: NeuralDice, args: Namespace, data: AbstractDataset):
 
     values = []
     for batch in data.iterate_dataset(batch_size=100):
-        batch = [b.to(device) for b in batch]
+        batch = [move_to_device(b, device) for b in batch]
         states, actions, rewards = batch
 
         values.append(
@@ -197,7 +210,7 @@ def main():
         if i >= args.num_iter:
             break
 
-        batch = [b.to(device) for b in batch]
+        batch = [move_to_device(b, device) for b in batch]
 
         loss = dice.train_batch(batch=batch, policy=policy)
         losses.append(loss)

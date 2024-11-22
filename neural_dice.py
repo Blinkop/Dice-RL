@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Type
+from typing import Optional, Type, List
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
-from torch.optim.lr_scheduler import StepLR
+from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR
 
 from policy import Policy
 
@@ -119,20 +119,17 @@ class NeuralDice(object):
             list(self._zeta_network.parameters()), lr=zeta_lr, maximize=True)
         self._lambda_optimizer = Adam([self._lambda], lr=lambda_lr)
 
-        self._nu_lr_scheduler = StepLR(
+        self._nu_lr_scheduler = CosineAnnealingLR(
             optimizer=self._nu_optimizer,
-            step_size=100,
-            gamma=0.2
+            T_max=1000
         )
-        self._zeta_lr_scheduler = StepLR(
+        self._zeta_lr_scheduler = CosineAnnealingLR(
             optimizer=self._zeta_optimizer,
-            step_size=100,
-            gamma=0.2
+            T_max=1000
         )
-        self._lambda_lr_scheduler = StepLR(
+        self._lambda_lr_scheduler = CosineAnnealingLR(
             optimizer=self._lambda_optimizer,
-            step_size=100,
-            gamma=0.2
+            T_max=1000
         )
 
         self._zero_reward = zero_reward
@@ -159,18 +156,19 @@ class NeuralDice(object):
     def nu_value_expectation(
         self,
         states: torch.Tensor,
-        policy: Policy
+        policy: Policy,
+        inputs: List
     ):
         batch_size = states.shape[0]
 
         if self._num_action_samples is None:
-            action_weights = policy.action_dist(state=states) # (B, NUM_ACTIONS)
+            action_weights = policy.action_dist(state=inputs) # (B, NUM_ACTIONS)
             values = self._nu_network(states) # (B, NUM_ACTIONS)
         else:
             action_weights = (1 / self._num_action_samples) *\
                 torch.ones((batch_size, self._num_action_samples)).to(self._device) # (B, A)
             actions = torch.concat([
-                policy.select_action(state=states).reshape(-1, 1)
+                policy.select_action(state=inputs).reshape(-1, 1)
                 for _ in range(self._num_action_samples)
             ], dim=1) # (B, A)
             values = self._nu_network(states).gather(1, actions) # (B, A)
@@ -182,22 +180,24 @@ class NeuralDice(object):
     def train_loss(
         self,
         first_state: torch.Tensor,
+        first_policy_inputs: List,
         current_state: torch.Tensor,
         current_action: torch.Tensor,
         next_state: torch.Tensor,
+        next_policy_inputs: List,
         rewards: torch.Tensor,
         step_num: torch.Tensor,
         has_next: torch.Tensor,
         policy: Policy
     ):
         nu_first_values = self.nu_value_expectation(
-            states=first_state, policy=policy
+            states=first_state, policy=policy, inputs=first_policy_inputs
         ).flatten() # (B,)
         nu_current_values = self._nu_network(current_state)\
             .gather(1, current_action.view(-1, 1))\
             .flatten() # (B,)
         nu_next_values = self.nu_value_expectation(
-            states=next_state, policy=policy
+            states=next_state, policy=policy, inputs=next_policy_inputs
         ).flatten() # (B,)
         zeta_current_values = self._zeta_network(current_state)\
             .gather(1, current_action.view(-1, 1))\
@@ -236,9 +236,11 @@ class NeuralDice(object):
 
         (
             first_state, # (B, S)
+            first_policy_inputs, # len() = B
             current_state, # (B, S)
             current_action, # (B,)
             next_state, # (B, S)
+            next_policy_inputs, # len() = B
             rewards, # (B,)
             step_num, # (B,)
             has_next # (B,)
@@ -246,9 +248,11 @@ class NeuralDice(object):
 
         loss = self.train_loss(
             first_state=first_state,
+            first_policy_inputs=first_policy_inputs,
             current_state=current_state,
             current_action=current_action,
             next_state=next_state,
+            next_policy_inputs=next_policy_inputs,
             rewards=rewards,
             step_num=step_num,
             has_next=has_next,
