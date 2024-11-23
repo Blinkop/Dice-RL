@@ -5,10 +5,11 @@ from data import MovieLensBasicMDP, MovieLensBase
 
 
 ML_PATH = './data/ml-1m.zip'
-SASREC_PATH = './models/sasrec.pt'
+SASREC_STATES_PATH = './models/sasrec.pt'
+SASREC_EVAL_PATH = './models/sasrec.pt'
 STATES_PATH = './models/sasrec_ml_states.pt'
-ACTION_DIST_PATH = './models/sasrec_actions_dist.pt'
-DEVICE = torch.device('cuda:2')
+ACTION_DIST_PATH = './models/sasrec_action_dist.pt'
+DEVICE = torch.device('cuda:1')
 
 
 @torch.no_grad()
@@ -79,7 +80,7 @@ def main():
     
     states = create_sasrec_states(
         dataset=dataset,
-        sasrec_path=SASREC_PATH,
+        sasrec_path=SASREC_STATES_PATH,
         device=DEVICE
     )
     torch.save(states, STATES_PATH)
@@ -90,7 +91,7 @@ def main():
     
     action_dist = create_sasrec_action_dist(
         dataset=dataset,
-        sasrec_path=SASREC_PATH,
+        sasrec_path=SASREC_EVAL_PATH,
         device=DEVICE
     )
     torch.save(action_dist, ACTION_DIST_PATH)
