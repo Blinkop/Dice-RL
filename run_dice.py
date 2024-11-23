@@ -10,8 +10,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from neural_dice import ValueNetwork, NeuralDice, SquaredActivation
-from policy import RandomPolicy, PopularRandomPolicy, SASRec, SASRecPrecalc
-from data import MovieLens, AbstractDataset
+from policy import RandomPolicy, PopularRandomPolicy, SASRec, Precalc
+from data import AbstractDataset, MovieLensBasicMDP, MovieLensSasrecMDP
 from data_utils import custom_collate
 from utils import move_to_device
 
@@ -58,37 +58,31 @@ def parse_arguments():
     parser.add_argument("-ei", "--eval_iter", help="evaluate every n itertion", type=int)
     parser.add_argument("-d", "--device", help="which device to use", type=str)
     parser.add_argument("-s", "--seed", help="random state seed", type=int)
+    parser.add_argument(
+        "-adf", "--action_dist_file",
+        help="if policy is precalc uses this file as precalculated action distribution",
+        type=str
+    )
     parser.add_argument("-en", "--experiment_name", help="results folder", type=str)
 
     return parser.parse_args()
 
 
 def create_dataset(args: Namespace):
-    device = torch.device(args.device)
-
     if args.dataset == 'movielens_basic':
-        dataset = MovieLens(
+        dataset = MovieLensBasicMDP(
             num_samples=args.num_episodes,
-            state_source='basic',
             policy=args.policy,
-            policy_path=None,
-            precalc_path='./models/sasrec_action_dist.pt',
-            state_model_path=None,
-            states_path=None,
             file_path='./data/ml-1m.zip',
-            device=device
+            action_dist_path=args.action_dist_file
         )
     elif args.dataset == 'movielens_sasrec':
-        dataset = MovieLens(
+        dataset = MovieLensSasrecMDP(
             num_samples=args.num_episodes,
-            state_source='sasrec',
             policy=args.policy,
-            policy_path=None,
-            precalc_path='./models/sasrec_action_dist.pt',
-            state_model_path=None,
-            states_path='./models/sasrec_ml_states.pt',
             file_path='./data/ml-1m.zip',
-            device=device
+            action_dist_path=args.action_dist_file,
+            states_path='./models/sasrec_ml_states.pt'
         )
     else:
         raise ValueError(f'Unknown dataset "{args.dataset}"')
@@ -117,8 +111,8 @@ def create_policy(args: Namespace, dataset: AbstractDataset):
             num_items=dataset.num_items,
             device=device
         )
-    elif args.policy == 'sasrec_precalc':
-        policy = SASRecPrecalc(
+    elif args.policy == 'precalc':
+        policy = Precalc(
             device=device
         )
     else:

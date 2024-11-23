@@ -1,1 +1,0 @@
-python run_dice.py --no-zeta_pos --no-use_reward -nr 0.0 -pr 0.0 -dr 1.0 -g 0.99 -hd 64 -nlr 0.0001 -zlr 0.0001 -ds movielens_sasrec -p sasrec_precalc -bs 8 -ne 1024 -ni 10000 -ei 100 -d cuda:2 -s 12345 -en test

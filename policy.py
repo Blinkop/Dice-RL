@@ -136,11 +136,11 @@ class SASRec(Policy):
         return F.one_hot(actions, self._num_items).float().to(self._device)
 
 
-class SASRecPrecalc(Policy):
+class Precalc(Policy):
     def __init__(
         self,
         device=torch.device('cuda:0'),
-        name='sasrec_precalc',
+        name='precalc',
     ):
         super().__init__(device=device, name=name)
 
