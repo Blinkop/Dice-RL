@@ -129,18 +129,18 @@ def main():
         )
         torch.save(predictions, pred_path)
 
-    # CQL SASRec prediction
-    for model_path, pred_path in CQL_AND_PREDICTIONS:
-        if os.path.isfile(pred_path):
-            print(f'file {pred_path} already exists, skipping {model_path} model ...')
-            continue
+    # # CQL SASRec prediction
+    # for model_path, pred_path in CQL_AND_PREDICTIONS:
+    #     if os.path.isfile(pred_path):
+    #         print(f'file {pred_path} already exists, skipping {model_path} model ...')
+    #         continue
     
-        predictions = create_cqlsasrec_predictions(
-            dataset=dataset,
-            cql_path=model_path,
-            device=DEVICE
-        )
-        torch.save(predictions, pred_path)
+    #     predictions = create_cqlsasrec_predictions(
+    #         dataset=dataset,
+    #         cql_path=model_path,
+    #         device=DEVICE
+    #     )
+    #     torch.save(predictions, pred_path)
 
     print('Done!')
 
