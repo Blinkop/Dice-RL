@@ -22,6 +22,7 @@ import matplotlib.pyplot as plt
 NUM_THREADS = 8
 NUM_WORKERS = 4
 
+
 def moving_average(x, n: int = 100):
     ret = np.cumsum(x, dtype=float)
     ret[n:] = ret[n:] - ret[:-n]
@@ -52,6 +53,7 @@ def parse_arguments():
     parser.add_argument("-zlr", "--zeta_lr", help="zeta learning rate", type=float)
     parser.add_argument("-ds", "--dataset", help="dataset to use", type=str)
     parser.add_argument("-p", "--policy", help="policy to estimate", type=str)
+    parser.add_argument("-pt", "--policy_type", help="det or prob", type=str)
     parser.add_argument("-bs", "--batch_size", help="batch size", type=int)
     parser.add_argument("-ne", "--num_episodes", help="number of episodes per batch", type=int)
     parser.add_argument("-ni", "--num_iter", help="number of iterations", type=int)
@@ -59,8 +61,8 @@ def parse_arguments():
     parser.add_argument("-d", "--device", help="which device to use", type=str)
     parser.add_argument("-s", "--seed", help="random state seed", type=int)
     parser.add_argument(
-        "-adf", "--action_dist_file",
-        help="if policy is precalc uses this file as precalculated action distribution",
+        "-pf", "--predictions_file",
+        help="if policy is precalc uses this file as precalculated actions",
         type=str
     )
     parser.add_argument("-en", "--experiment_name", help="results folder", type=str)
@@ -74,14 +76,14 @@ def create_dataset(args: Namespace):
             num_samples=args.num_episodes,
             policy=args.policy,
             file_path='./data/ml-1m.zip',
-            action_dist_path=args.action_dist_file
+            predictions_path=args.predictions_file
         )
     elif args.dataset == 'movielens_sasrec':
         dataset = MovieLensSasrecMDP(
             num_samples=args.num_episodes,
             policy=args.policy,
             file_path='./data/ml-1m.zip',
-            action_dist_path=args.action_dist_file,
+            predictions_path=args.predictions_file,
             states_path='./models/sasrec_ml_states.pt'
         )
     else:
@@ -154,7 +156,7 @@ def create_dice(args: Namespace, dataset: AbstractDataset):
         gamma=args.gamma,
         zero_reward=not args.use_reward,
         f_exponent=1.5,
-        num_action_samples=None,
+        num_action_samples=None if args.policy_type == 'prob' else 1,
         primal_regularizer=args.primal_reg,
         dual_regularizer=args.dual_reg,
         norm_regularizer=args.norm_reg,
