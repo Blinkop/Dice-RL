@@ -9,11 +9,10 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from neural_dice import ValueNetwork, NeuralDice, SquaredActivation
-from policy import RandomPolicy, PopularRandomPolicy, SASRec, Precalc
-from data import AbstractDataset, MovieLensBasicMDP, MovieLensSasrecMDP
-from data_utils import custom_collate
-from utils import move_to_device
+from src.dice import ValueNetwork, NeuralDice, SquaredActivation
+from src.policy import RandomPolicy, PopularRandomPolicy, SASRec, Precalc
+from src.data import AbstractDataset, MovieLensBasicMDP, MovieLensSasrecMDP, custom_collate
+from src.utils import move_to_device
 
 import seaborn as sns
 import matplotlib.pyplot as plt
