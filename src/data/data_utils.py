@@ -64,41 +64,33 @@ def to_numeric_id(data, field):
 
 def custom_collate(data_list):
     first_state = []
-    first_inputs = []
+    first_sampled_actions = []
     current_state = []
     current_action = []
     next_state = []
-    next_inputs = []
+    next_sampled_actions = []
     rewards = []
     step_num = []
     has_next = []
 
-    inputs_are_tensors = torch.is_tensor(data_list[0][1])
-
-    for fs, fi, cs, ca, ns, ni, rw, sn, hn in data_list:
+    for fs, fsa, cs, ca, ns, nsa, rw, sn, hn in data_list:
         first_state.append(fs)
-        if inputs_are_tensors:
-            first_inputs.append(fi)
-        else:
-            first_inputs += fi
+        first_sampled_actions.append(fsa)
         current_state.append(cs)
         current_action.append(ca)
         next_state.append(ns)
-        if inputs_are_tensors:
-            next_inputs.append(ni)
-        else:
-            next_inputs += ni
+        next_sampled_actions.append(nsa)
         rewards.append(rw)
         step_num.append(sn)
         has_next.append(hn)
 
     return (
         torch.concat(first_state, dim=0),
-        torch.concat(first_inputs, dim=0) if inputs_are_tensors else first_inputs,
+        torch.concat(first_sampled_actions, dim=0),
         torch.concat(current_state, dim=0),
         torch.concat(current_action, dim=0),
         torch.concat(next_state, dim=0),
-        torch.concat(next_inputs, dim=0) if inputs_are_tensors else next_inputs,
+        torch.concat(next_sampled_actions, dim=0),
         torch.concat(rewards, dim=0),
         torch.concat(step_num, dim=0),
         torch.concat(has_next, dim=0)

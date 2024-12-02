@@ -1,8 +1,6 @@
 from .data import (
     AbstractDataset,
-    MovieLensBase,
-    MovieLensBasicMDP,
-    MovieLensSasrecMDP
+    MovieLens,
 )
 
 from .data_utils import (
@@ -15,9 +13,7 @@ from .data_utils import (
 
 __all__ = [
     'AbstractDataset',
-    'MovieLensBase',
-    'MovieLensBasicMDP',
-    'MovieLensSasrecMDP',
+    'MovieLens',
     'transform_indices',
     'to_numeric_id',
     'custom_collate',

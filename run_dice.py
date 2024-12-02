@@ -10,8 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.dice import ValueNetwork, NeuralDice, SquaredActivation
-from src.policy import RandomPolicy, PopularRandomPolicy, SASRec, Precalc
-from src.data import AbstractDataset, MovieLensBasicMDP, MovieLensSasrecMDP, custom_collate
+from src.data import AbstractDataset, MovieLens, custom_collate
 from src.utils import move_to_device
 
 import seaborn as sns
@@ -50,76 +49,40 @@ def parse_arguments():
     parser.add_argument("-hd", "--hidden_dim", help="hidden dimension size", type=int)
     parser.add_argument("-nlr", "--nu_lr", help="nu learning rate", type=float)
     parser.add_argument("-zlr", "--zeta_lr", help="zeta learning rate", type=float)
+    parser.add_argument(
+        "-lrs", "--lr_schedule",
+        help="use learning rate schedule",
+        type=bool,
+        action=argparse.BooleanOptionalAction
+    )
     parser.add_argument("-ds", "--dataset", help="dataset to use", type=str)
-    parser.add_argument("-p", "--policy", help="policy to estimate", type=str)
-    parser.add_argument("-pt", "--policy_type", help="det or prob", type=str)
     parser.add_argument("-bs", "--batch_size", help="batch size", type=int)
     parser.add_argument("-ne", "--num_episodes", help="number of episodes per batch", type=int)
     parser.add_argument("-ni", "--num_iter", help="number of iterations", type=int)
     parser.add_argument("-ei", "--eval_iter", help="evaluate every n itertion", type=int)
     parser.add_argument("-d", "--device", help="which device to use", type=str)
     parser.add_argument("-s", "--seed", help="random state seed", type=int)
-    parser.add_argument(
-        "-pf", "--predictions_file",
-        help="if policy is precalc uses this file as precalculated actions",
-        type=str
-    )
+    parser.add_argument("-sf", "--states_file", help="fIle with precalculated states", type=str)
+    parser.add_argument("-pf", "--predictions_file", help="file with precalculcated actions", type=str)
+    parser.add_argument("-ae", "--action_embeddings_file", help="file with precalculcated action embeddings", type=str)
     parser.add_argument("-en", "--experiment_name", help="results folder", type=str)
 
     return parser.parse_args()
 
 
 def create_dataset(args: Namespace):
-    if args.dataset == 'movielens_basic':
-        dataset = MovieLensBasicMDP(
+    if args.dataset == 'movielens':
+        dataset = MovieLens(
             num_samples=args.num_episodes,
-            policy=args.policy,
-            file_path='./data/ml-1m.zip',
-            predictions_path=args.predictions_file
-        )
-    elif args.dataset == 'movielens_sasrec':
-        dataset = MovieLensSasrecMDP(
-            num_samples=args.num_episodes,
-            policy=args.policy,
-            file_path='./data/ml-1m.zip',
+            states_path=args.states_file,
             predictions_path=args.predictions_file,
-            states_path='./models/sasrec_ml_states.pt'
+            action_embeddings_path=args.action_embeddings_file,
+            data_path='./data/ml-1m.zip'
         )
     else:
         raise ValueError(f'Unknown dataset "{args.dataset}"')
 
     return dataset
-
-
-def create_policy(args: Namespace, dataset: AbstractDataset):
-    device = torch.device(args.device)
-
-    if args.policy == 'random':
-        policy = RandomPolicy(
-            num_actions=dataset.num_items,
-            device=device,
-            seed=args.seed
-        )
-    elif args.policy == 'poprandom':
-        policy = PopularRandomPolicy(
-            items_count=dataset.items_count,
-            device=device,
-            seed=args.seed
-        )
-    elif args.policy == 'sasrec':
-        policy = SASRec(
-            model_path='./models/sasrec.pt',
-            num_items=dataset.num_items,
-            device=device
-        )
-    elif args.policy == 'precalc':
-        policy = Precalc(
-            device=device
-        )
-    else:
-        raise ValueError(f'Unknown policy "{args.policy}"')
-
-    return policy
 
 
 def create_dice(args: Namespace, dataset: AbstractDataset):
@@ -128,7 +91,7 @@ def create_dice(args: Namespace, dataset: AbstractDataset):
     nu = ValueNetwork(
         num_layers=2,
         state_dim=dataset.state_dim,
-        action_dim=dataset.num_items,
+        action_dim=dataset.action_dim,
         hidden_dim=args.hidden_dim,
         output_activation=None,
         seed=args.seed
@@ -138,7 +101,7 @@ def create_dice(args: Namespace, dataset: AbstractDataset):
     zeta = ValueNetwork(
         num_layers=2,
         state_dim=dataset.state_dim,
-        action_dim=dataset.num_items,
+        action_dim=dataset.action_dim,
         hidden_dim=args.hidden_dim,
         output_activation=SquaredActivation if args.zeta_pos else None,
         seed=args.seed+1
@@ -146,16 +109,16 @@ def create_dice(args: Namespace, dataset: AbstractDataset):
     zeta = zeta.to(device)
 
     return NeuralDice(
+        action_embeddigns=dataset.action_embs,
         nu_network=nu,
         zeta_network=zeta,
         nu_lr=args.nu_lr,
         zeta_lr=args.zeta_lr,
         lambda_lr=args.nu_lr,
-        num_actions=dataset.num_items,
+        lr_schedule=args.lr_schedule,
         gamma=args.gamma,
         zero_reward=not args.use_reward,
         f_exponent=1.5,
-        num_action_samples=None if args.policy_type == 'prob' else 1,
         primal_regularizer=args.primal_reg,
         dual_regularizer=args.dual_reg,
         norm_regularizer=args.norm_reg,
@@ -192,7 +155,6 @@ def main():
     device = torch.device(args.device)
 
     dataset = create_dataset(args=args)
-    policy = create_policy(args=args, dataset=dataset)
     dice = create_dice(args=args, dataset=dataset)
     
     loader_generator = torch.Generator()
@@ -218,7 +180,7 @@ def main():
 
         batch = [move_to_device(b, device) for b in batch]
 
-        loss = dice.train_batch(batch=batch, policy=policy)
+        loss = dice.train_batch(batch=batch)
         losses.append(loss)
 
         if i % args.eval_iter == 0 or i == (args.num_iter - 1):

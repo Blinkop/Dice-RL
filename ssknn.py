@@ -162,6 +162,17 @@ class S_SKNN:
         similarity = truncate_similarity(similarity=full_similarity, k=self.n_neighbors)
         scores = similarity.dot(self.interactions).toarray()
         return scores
+    
+    def get_action_embeddings(self, data_description):
+        d = pd.DataFrame({
+            data_description['users'] : np.arange(data_description['n_items']),
+            data_description['items'] : np.arange(data_description['n_items']),
+            data_description['order'] : np.zeros(data_description['n_items']).astype(np.int64)
+        })
+
+        dummy_interactions = generate_sequential_matrix(d, data_description, rebase_users=True)
+        full_similarity = compute_similarity(self.similarity_type, dummy_interactions, self.interactions)
+        return full_similarity.toarray()
 
     def get_current_state(self, user_test_interactions, item_popularity, data_description, calculate_subseqs, top_pop=300):
         
@@ -177,9 +188,6 @@ class S_SKNN:
                 targets.append(target.itemid.values[0])
             
             user_test_interactions = seqs
-        else:
-            user_test_interactions, target = leave_one_out(user_test_interactions, target='timestamp', sample_top=True, random_state=0)
-            targets = target.itemid.values
         
         test_interactions_matrix = generate_sequential_matrix(user_test_interactions, data_description, rebase_users=True)
         
@@ -193,4 +201,4 @@ class S_SKNN:
     
         popular_item_scores = similarity.dot(self.interactions[:, item_popularity[:top_pop].index]).toarray()
         
-        return popular_item_scores, np.array(targets)
+        return popular_item_scores
