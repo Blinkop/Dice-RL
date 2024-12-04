@@ -17,7 +17,7 @@ from typing import Type
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-from torch.optim.lr_scheduler import StepLR, CosineAnnealingLR
+from torch.optim.lr_scheduler import StepLR
 
 
 class SquaredActivation(nn.Module):
@@ -37,10 +37,13 @@ class ValueNetwork(nn.Module):
         state_dim: int,
         action_dim: int,
         hidden_dim: int,
+        multihead_output: bool = False,
         output_activation: Type[nn.Module] = None,
         seed: int = None
     ):
         super().__init__()
+
+        self._multihead_output = multihead_output
 
         self._torch_generator = torch.Generator()
         if seed is not None:
@@ -48,22 +51,29 @@ class ValueNetwork(nn.Module):
         else:
             self._torch_generator.seed()
 
+        input_size = state_dim if self._multihead_output else state_dim + action_dim
+        output_size = action_dim if self._multihead_output else 1
+
         layers = [
-            nn.Linear(state_dim + action_dim, hidden_dim),
+            nn.Linear(input_size, hidden_dim),
             nn.ReLU()
         ]
 
         for _ in range(num_layers):
             layers.append(nn.Linear(hidden_dim, hidden_dim))
             layers.append(nn.ReLU())
-
-        layers.append(nn.Linear(hidden_dim, 1))
+        
+        layers.append(nn.Linear(hidden_dim, output_size))
         if output_activation is not None:
             layers.append(output_activation())
 
         self._network = nn.Sequential(*layers)
 
         self.init_weights()
+
+    @property
+    def multihead_output(self):
+        return self._multihead_output
 
     def init_weights(self):
         for _, param in self.named_parameters():
@@ -76,16 +86,22 @@ class ValueNetwork(nn.Module):
                     param.data, generator=self._torch_generator
                 )
 
-    def forward(self, states, actions):
+    def forward(self, states, actions=None):
         if len(states.shape) != 2:
             raise ValueError(f'every state must be 1d vector')
-        
-        if len(actions.shape) != 2:
-            raise ValueError(f'every state must be 1d vector')
-        
-        states_actions = torch.concat([states, actions], dim=1)
 
-        return self._network(states_actions)
+        if not self._multihead_output and actions is None:
+            raise ValueError(f'action embeddings must be passed when multihead=False')
+        
+        if not self._multihead_output and len(actions.shape) != 2:
+            raise ValueError(f'every action must be 1d vector')
+        
+        if self._multihead_output:
+            input_batch = states
+        else:
+            input_batch = torch.concat([states, actions], dim=1)
+
+        return self._network(input_batch)
 
 
 class NeuralDice(object):
@@ -127,18 +143,20 @@ class NeuralDice(object):
         self._nu_lr_scheduler = StepLR(
             optimizer=self._nu_optimizer,
             step_size=1000,
-            gamma=0.01**(1/200),
+            gamma=0.1**(1/200),
         )
         self._zeta_lr_scheduler = StepLR(
             optimizer=self._zeta_optimizer,
             step_size=1000,
-            gamma=0.01**(1/200),
+            gamma=0.1**(1/200),
         )
         self._lambda_lr_scheduler = StepLR(
             optimizer=self._lambda_optimizer,
             step_size=1000,
-            gamma=0.01**(1/200),
+            gamma=0.1**(1/200),
         )
+
+        self._multihead_output = self._nu_network.multihead_output
 
         self._zero_reward = zero_reward
         self._weight_by_gamma = weight_by_gamma
@@ -168,11 +186,16 @@ class NeuralDice(object):
 
         action_weights = (1 / num_sampled_actions) *\
             torch.ones((batch_size, num_sampled_actions)).to(self._device) # (B, A)
-        states = states.repeat(1, num_sampled_actions)\
-            .reshape(batch_size * num_sampled_actions, -1) # (B*A, S)
-        actions = self._action_embs[sampled_actions.view(-1)] # (B*A, E)
         
-        values = self._nu_network(states, actions).reshape(batch_size, -1) # (B, A)
+        if self._multihead_output:
+            values = self._nu_network(states).gather(1, sampled_actions) # (B, A)
+        else:
+            states = states.repeat(1, num_sampled_actions)\
+                .reshape(batch_size * num_sampled_actions, -1) # (B*A, S)
+            actions = self._action_embs[sampled_actions.view(-1)] # (B*A, E)
+            
+            values = self._nu_network(states, actions).reshape(batch_size, -1) # (B, A)
+        
         
         value_expectation = values * action_weights
 
@@ -190,21 +213,28 @@ class NeuralDice(object):
         step_num: torch.Tensor, # (B,)
         has_next: torch.Tensor, # (B,)
     ):
+        if self._multihead_output:
+            nu_current_values = self._nu_network(current_state)\
+                .gather(1, current_action.view(-1, 1)).flatten() # (B,)
+            zeta_current_values = self._zeta_network(current_state)\
+                .gather(1, current_action.view(-1, 1)).flatten() # (B,)
+        else:
+            nu_current_values = self._nu_network(
+                current_state, self._action_embs[current_action]
+            ).flatten() # (B,)
+            zeta_current_values = self._zeta_network(
+                current_state, self._action_embs[current_action]
+            ).flatten() # (B,)
+
         nu_first_values = self.nu_value_expectation(
             states=first_state,
             sampled_actions=first_sampled_actions
-        ).flatten() # (B,)
-        nu_current_values = self._nu_network(
-            current_state, self._action_embs[current_action]
         ).flatten() # (B,)
         nu_next_values = self.nu_value_expectation(
             states=next_state,
             sampled_actions=next_sampled_actions
         ).flatten() # (B,)
-        zeta_current_values = self._zeta_network(
-            current_state, self._action_embs[current_action]
-        ).flatten() # (B,)
-
+        
         discount = self._gamma * has_next
 
         bellman_residuals = (
@@ -293,7 +323,11 @@ class NeuralDice(object):
         self._zeta_network.eval()
 
         with torch.no_grad():
-            weights = self._zeta_network(states, self._action_embs[actions]).flatten()
+            if self._multihead_output:
+                weights = self._zeta_network(states).gather(1, actions.view(-1, 1)).flatten()
+            else:
+                weights = self._zeta_network(states, self._action_embs[actions]).flatten()
+            
             result = torch.sum(weights * rewards).detach().cpu()
 
         return result.item()

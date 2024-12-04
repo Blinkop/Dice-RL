@@ -55,6 +55,12 @@ def parse_arguments():
         type=bool,
         action=argparse.BooleanOptionalAction
     )
+    parser.add_argument(
+        "-mh", "--multihead",
+        help="use multihead num and zeta networks",
+        type=bool,
+        action=argparse.BooleanOptionalAction
+    )
     parser.add_argument("-ds", "--dataset", help="dataset to use", type=str)
     parser.add_argument("-bs", "--batch_size", help="batch size", type=int)
     parser.add_argument("-ne", "--num_episodes", help="number of episodes per batch", type=int)
@@ -91,8 +97,9 @@ def create_dice(args: Namespace, dataset: AbstractDataset):
     nu = ValueNetwork(
         num_layers=2,
         state_dim=dataset.state_dim,
-        action_dim=dataset.action_dim,
+        action_dim=dataset.num_items if args.multihead else dataset.action_dim,
         hidden_dim=args.hidden_dim,
+        multihead_output=args.multihead,
         output_activation=None,
         seed=args.seed
     )
@@ -101,8 +108,9 @@ def create_dice(args: Namespace, dataset: AbstractDataset):
     zeta = ValueNetwork(
         num_layers=2,
         state_dim=dataset.state_dim,
-        action_dim=dataset.action_dim,
+        action_dim=dataset.num_items if args.multihead else dataset.action_dim,
         hidden_dim=args.hidden_dim,
+        multihead_output=args.multihead,
         output_activation=SquaredActivation if args.zeta_pos else None,
         seed=args.seed+1
     )
