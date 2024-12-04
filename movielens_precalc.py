@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import pandas as pd
 import numpy as np
 from typing import Dict, List
@@ -57,7 +58,7 @@ SSKNN_PRECALC_PATHS = {
     ]
 }
 
-DEVICE = torch.device('cuda:1')
+DEVICE = torch.device('cuda:2')
 
 
 @torch.no_grad()
@@ -280,6 +281,8 @@ def ssknn_precalc(
 
 
 def main():
+    Path(f'precalc').mkdir(exist_ok=True)
+
     train_df, test_df, holdout_df, description = MovieLens.create_dataset(ML_PATH)
     test_sequences = MovieLens.create_sequences(test_df, holdout_df)
 
