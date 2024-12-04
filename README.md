@@ -17,3 +17,5 @@ Parameters information:
 ```
 python run_dice.py --help
 ```
+
+To reproduce experiments with models own states and multihead $\nu$ and $\zeta$ architecture run ```experiments_*.sh```. It may require to change the device to run on
