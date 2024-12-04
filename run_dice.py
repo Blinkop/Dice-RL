@@ -61,7 +61,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "-mh", "--multihead",
-        help="use multihead num and zeta networks",
+        help="use multihead nu and zeta networks",
         type=bool,
         action=argparse.BooleanOptionalAction
     )
