@@ -42,16 +42,20 @@ def parse_arguments():
         type=bool,
         action=argparse.BooleanOptionalAction
     )
-    parser.add_argument("-nr", "--norm_reg", help="lambda coefficient", type=float)
+    parser.add_argument("-nr", "--norm_reg", help="lambda magnitude", type=float)
     parser.add_argument("-pr", "--primal_reg", help="alpha_Q", type=float)
     parser.add_argument("-dr", "--dual_reg", help="alpha_zeta", type=float)
     parser.add_argument("-g", "--gamma", help="discount factor", type=float)
-    parser.add_argument("-hd", "--hidden_dim", help="hidden dimension size", type=int)
+    parser.add_argument(
+        "-hd", "--hidden_dim",
+        help="hidden dimension size of nu and zeta networks",
+        type=int
+    )
     parser.add_argument("-nlr", "--nu_lr", help="nu learning rate", type=float)
     parser.add_argument("-zlr", "--zeta_lr", help="zeta learning rate", type=float)
     parser.add_argument(
         "-lrs", "--lr_schedule",
-        help="use learning rate schedule",
+        help="use learning rate schedule (hardcoded in neural_dice.py file)",
         type=bool,
         action=argparse.BooleanOptionalAction
     )
@@ -64,7 +68,7 @@ def parse_arguments():
     parser.add_argument("-ds", "--dataset", help="dataset to use", type=str)
     parser.add_argument("-bs", "--batch_size", help="batch size", type=int)
     parser.add_argument("-ne", "--num_episodes", help="number of episodes per batch", type=int)
-    parser.add_argument("-ni", "--num_iter", help="number of iterations", type=int)
+    parser.add_argument("-ni", "--num_iter", help="number of dice iterations", type=int)
     parser.add_argument("-ei", "--eval_iter", help="evaluate every n itertion", type=int)
     parser.add_argument("-d", "--device", help="which device to use", type=str)
     parser.add_argument("-s", "--seed", help="random state seed", type=int)
