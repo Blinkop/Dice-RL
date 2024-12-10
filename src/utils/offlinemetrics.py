@@ -4,7 +4,7 @@ from recommenders.evaluation import python_evaluation
 import warnings
 from typing import List, Union
 
-warnings.simplefilter(action='ignore', category=FutureWarning)
+# warnings.simplefilter(action='ignore', category=FutureWarning)
 
 
 DEFAULT_METRICS = [
