@@ -1,11 +1,9 @@
 from abc import abstractmethod
 
-from typing import List
 import numpy as np
 import pandas as pd
 
 import torch
-import torch.nn.functional as F
 from torch.utils.data import IterableDataset, get_worker_info
 
 from .data_utils import get_dataset
@@ -50,7 +48,7 @@ class AbstractDataset(IterableDataset):
         raise NotImplementedError()
 
 
-class MovieLens(AbstractDataset):
+class DICEDataset(AbstractDataset):
     def __init__(
         self,
         num_samples: int,
@@ -63,7 +61,7 @@ class MovieLens(AbstractDataset):
 
         self._num_samples = num_samples
 
-        trainset, testset, holdout, description = MovieLens.create_dataset(path=data_path)
+        trainset, testset, holdout, description = DICEDataset.create_dataset(path=data_path)
 
         self._num_items = description['n_items']
         self._train_df = trainset
@@ -75,7 +73,7 @@ class MovieLens(AbstractDataset):
         for item, count in zip(items_unique, items_count):
             self._items_count[item] = count
 
-        self._user_sequences = MovieLens.create_sequences(
+        self._user_sequences = DICEDataset.create_sequences(
             testset=self._test_df, holdout=self._test_holdout_df)
         self._user_ids = list(self._user_sequences.keys())
 

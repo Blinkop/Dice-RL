@@ -8,11 +8,11 @@ from tqdm import tqdm
 import torch
 from torch.nn import functional as F
 
-from src.data import MovieLens
+from src.data import DICEDataset
 from dt4rec_utils import make_rsa
 
 
-ML_PATH = './data/ml-1m.zip'
+DATA_PATH = './data/ml-1m.zip'
 
 SASREC_PRECALC_PATHS = {
     './models/sasrec.pt' : [
@@ -283,8 +283,8 @@ def ssknn_precalc(
 def main():
     Path(f'precalc').mkdir(exist_ok=True)
 
-    train_df, test_df, holdout_df, description = MovieLens.create_dataset(ML_PATH)
-    test_sequences = MovieLens.create_sequences(test_df, holdout_df)
+    train_df, test_df, holdout_df, description = DICEDataset.create_dataset(DATA_PATH)
+    test_sequences = DICEDataset.create_sequences(test_df, holdout_df)
 
     items_count = train_df['itemid'].value_counts()
 

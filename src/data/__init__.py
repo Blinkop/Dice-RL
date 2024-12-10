@@ -1,6 +1,6 @@
 from .data import (
     AbstractDataset,
-    MovieLens,
+    DICEDataset,
 )
 
 from .data_utils import (
@@ -13,7 +13,7 @@ from .data_utils import (
 
 __all__ = [
     'AbstractDataset',
-    'MovieLens',
+    'DICEDataset',
     'transform_indices',
     'to_numeric_id',
     'custom_collate',

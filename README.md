@@ -2,13 +2,15 @@
 
 First, put dataset into ```data``` folder. Dataset should be in ```.csv``` format and at least have columns ```userid, itemid, timestamp``` (```timestamp``` should contain integer values).
 
-If the dataset is large, it is recommended to change ```test_size, validation_size, q``` parameters in the ```src/data/data.py/MovieLens.create_dataset()/get_dataset()``` function.
+If the dataset is large, it is recommended to change ```test_size, validation_size, q``` parameters in the ```src/data/data.py/DICEDataset.create_dataset/get_dataset()``` call.
 
-To pre-calculate states, predictions, and action embeddings for selected dataset (MovieLens-1M by default), change data and saved model paths in ```dataset_precalc.py``` and run:
+To pre-calculate states, predictions, and action embeddings for selected dataset run:
 
 ```
 python dataset_precalc.py
 ```
+
+The default dataset is MovieLens-1M, and if you wish to run it with your own one, modify global paths in ```dataset_precalc.py```.
 
 To run experiment for DICE use ```run_dice.py``` script. The results will be written to ```experiments``` folder. For example:
 
@@ -25,4 +27,3 @@ python run_dice.py --help
 To reproduce experiments for MovieLens with models' own states and multihead $\nu$ and $\zeta$ architecture run ```experiments_*.sh```. It may require to change the device to run on.
 
 The final plot is drawn with ```movielens_result.ipynb``` notebook.
-

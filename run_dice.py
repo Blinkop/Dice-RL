@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
 import torch
-from src.data import AbstractDataset, MovieLens, custom_collate
+from src.data import AbstractDataset, DICEDataset, custom_collate
 from src.dice import NeuralDice, SquaredActivation, ValueNetwork
 from src.utils import move_to_device
 from torch.utils.data import DataLoader
@@ -94,7 +94,7 @@ def parse_arguments():
 
 
 def create_dataset(args: Namespace):
-    dataset = MovieLens(
+    dataset = DICEDataset(
         num_samples=args.num_episodes,
         states_path=args.states_file,
         predictions_path=args.predictions_file,

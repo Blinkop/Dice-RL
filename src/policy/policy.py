@@ -2,7 +2,6 @@ import abc
 from typing import List
 
 import torch
-import torch.nn.functional as F
 
 class Policy(object):
     def __init__(
