@@ -1,7 +1,73 @@
 import inspect
-from typing import Optional
+from typing import Optional, List
 
 import numpy as np
+
+import torch
+from torch.utils.data import IterableDataset, get_worker_info, default_collate
+
+
+class DiceDatasetWrapper(IterableDataset):
+    def __init__(
+        self,
+        states: List[np.ndarray],
+        actions: List[np.ndarray],
+        rewards: List[np.ndarray],
+        target_actions: List[np.ndarray],
+        batch_size: int
+    ) -> None:
+        super().__init__()
+
+        trajectory_len = [len(r) for r in rewards]
+        trajectory_offset = np.cumsum([0] + trajectory_len)[:-1]
+
+        self._num_trajectories = len(rewards)
+        self._trajectory_len = torch.tensor(trajectory_len, dtype=torch.long)
+        self._trajectory_offset = torch.tensor(trajectory_offset, dtype=torch.long)
+
+        self._batch_size = batch_size
+
+        self._state = torch.tensor(np.concatenate(states), dtype=torch.float)
+        self._action = torch.tensor(np.concatenate(actions), dtype=torch.long)
+        self._reward = torch.tensor(np.concatenate(rewards), dtype=torch.float)
+        self._target_action = torch.tensor(np.concatenate(target_actions), dtype=torch.long)
+
+    def generate(self):
+        generator = torch.Generator()
+        generator.manual_seed(get_worker_info().seed)
+
+        while True:
+            idx = torch.randint(
+                self._num_trajectories,
+                size=(self._batch_size,),
+                generator=generator
+            )
+            t = torch.tensor([
+                torch.randint(0, l - 2, size=(1,), generator=generator)
+                for l in self._trajectory_len[idx]
+            ], dtype=torch.long)
+
+            flatten_idx = self._trajectory_offset[idx]
+            flatten_t = flatten_idx + t
+
+            yield (
+                self._state[flatten_idx],
+                self._target_action[flatten_idx],
+                self._state[flatten_t],
+                self._action[flatten_t],
+                self._reward[flatten_t],
+                self._state[flatten_t + 1],
+                self._target_action[flatten_t + 1]
+            )
+    
+    def __iter__(self):
+        return iter(self.generate())
+
+    
+def custom_collate(batch_list):
+    default_batch = default_collate(batch_list)
+
+    return [tensor.flatten(0, 1) for tensor in default_batch]
 
 
 def get_lambda_code(f):

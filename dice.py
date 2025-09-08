@@ -12,12 +12,13 @@ import torch
 import torch.nn.functional as F
 from torch.optim import Adam, SGD
 from torch.nn.utils import clip_grad_norm_
+from torch.utils.data import DataLoader
 
 from sklearn.utils import check_scalar
 
 from functions import StateActionNetwork
 from functions import DiceFunctions
-from utils import check_array, get_lambda_code
+from utils import DiceDatasetWrapper, check_array, get_lambda_code, custom_collate
 
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -148,13 +149,13 @@ class Dice(ABC):
         plt.plot(self._experiment_data['w_reg_loss'], alpha=0.7, label='w reg')
         plt.plot(self._experiment_data['loss'], alpha=0.7, label='loss')
         plt.legend()
-        plt.savefig(exp_folder / "losses.pdf", bbox_inches="tight")
+        plt.savefig(exp_folder / "losses.png", bbox_inches="tight")
         plt.close()
 
         sns.set_theme()
         plt.title(f"values")
         plt.plot(self._experiment_data['value_per_step'])
-        plt.savefig(exp_folder / "values.pdf", bbox_inches="tight")
+        plt.savefig(exp_folder / "values.png", bbox_inches="tight")
         plt.close()
 
     def _report_loss(
@@ -208,6 +209,7 @@ class Dice(ABC):
         w_regularization = self._alpha_w * self._f2_function(w).mean()
 
         return initial_value, td_loss, q_regularization, w_regularization
+
     
     def fit(
         self,
@@ -218,10 +220,12 @@ class Dice(ABC):
         num_steps: int,
         batch_size: int = 1024,
         eval_iter: int = 100,
+        num_workers: int = 4,
         result_folder: str = None
     ):
         check_scalar(num_steps, name='num_steps', target_type=int, min_val=1)
         check_scalar(batch_size, name='batch_size', target_type=int, min_val=1)
+        check_scalar(num_workers, name='num_workers', target_type=int, min_val=1)
 
         if not (
             len(state)
@@ -230,10 +234,8 @@ class Dice(ABC):
             == len(target_action)
         ):
             raise ValueError('number of trajectories mismatch')
-        
-        num_trajectories = len(state)
 
-        for i in range(num_trajectories):
+        for i in range(len(state)):
             check_array(state[i], name=f'state[{i}]', expected_dim=2)
             check_array(action[i], name=f'action[{i}]', expected_dim=1)
             check_array(reward[i], name=f'reward[{i}]', expected_dim=1)
@@ -246,59 +248,46 @@ class Dice(ABC):
                 == target_action[i].shape[0]
             ):
                 raise ValueError(f'trajectory length mismatch at index {i}')
-            
+
+        if batch_size % num_workers > 0:
+            raise ValueError(f'batch_size % num_workers != 0')
+
         self._reset_experiment_data()
 
-        trajectory_len = [len(r) for r in reward]
-        trajectory_offset = np.cumsum([0] + trajectory_len)[:-1]
+        single_batch_size = int(batch_size / num_workers)
 
-        trajectory_len = torch.tensor(
-            trajectory_len, dtype=torch.long, device=self._device
-        )
-        trajectory_offset = torch.tensor(
-            trajectory_offset, dtype=torch.long, device=self._device
-        )
-
-        state_tensor = torch.tensor(
-            np.concatenate(state), dtype=torch.float, device=self._device
-        )
-        action_tensor = torch.tensor(
-            np.concatenate(action), dtype=torch.long, device=self._device
-        )
-        reward_tensor = torch.tensor(
-            np.concatenate(reward), dtype=torch.float, device=self._device
-        )
-        target_action_tensor = torch.tensor(
-            np.concatenate(target_action), dtype=torch.long, device=self._device
+        dataset = DiceDatasetWrapper(
+            states=state,
+            actions=action,
+            rewards=reward,
+            target_actions=target_action,
+            batch_size=single_batch_size
         )
 
-        tqdm_iterator = tqdm(range(num_steps), total=num_steps)
-        for i in tqdm_iterator:
-            idx = torch.randint(
-                num_trajectories,
-                size=(batch_size,),
-                device=self._device,
-                generator=self._torch_generator
-            )
-            t = torch.tensor([
-                torch.randint(
-                    0, l - 2, size=(1,),
-                    generator=self._torch_generator
-                )
-                for l in trajectory_len[idx]
-            ], dtype=torch.long, device=self._device)
+        loader = DataLoader(
+            dataset=dataset,
+            batch_size=num_workers,
+            num_workers=num_workers,
+            prefetch_factor=None,
+            pin_memory=True,
+            collate_fn=custom_collate,
+            persistent_workers=False,
+            generator=self._torch_generator
+        )
 
-            flatten_idx = trajectory_offset[idx]
-            flatten_t = flatten_idx + t
+        tqdm_iterator = tqdm(loader, total=num_steps)
+        for i, batch in enumerate(tqdm_iterator):
+            if i >= num_steps:
+                break
 
             initial_, td_, q_, w_ = self.objective_function(
-                first_state=state_tensor[flatten_idx],
-                first_action=target_action_tensor[flatten_idx],
-                state=state_tensor[flatten_t],
-                action=action_tensor[flatten_t],
-                reward=reward_tensor[flatten_t],
-                next_state=state_tensor[flatten_t + 1],
-                next_action=target_action_tensor[flatten_t + 1]
+                first_state=batch[0],
+                first_action=batch[1],
+                state=batch[2],
+                action=batch[3],
+                reward=batch[4],
+                next_state=batch[5],
+                next_action=batch[6]
             )
             loss = initial_ + td_ + q_ - w_
 
