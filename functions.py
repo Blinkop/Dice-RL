@@ -2,7 +2,6 @@ from enum import Enum
 
 import torch
 import torch.nn as nn
-from pytorch_revgrad import RevGrad
 
 from sklearn.utils import check_scalar
 

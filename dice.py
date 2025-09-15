@@ -141,6 +141,11 @@ class Dice(ABC):
         with open(exp_folder / "parameters.json", 'w') as f:
             json.dump(params, f, indent="\t")
 
+        np.save(
+            exp_folder / "values.npy",
+            np.array(self._experiment_data['value_per_step'])
+        )
+
         sns.set_theme()
         plt.title("loss")
         plt.plot(self._experiment_data['initial_loss'], alpha=0.7, label='initial q')
@@ -221,7 +226,8 @@ class Dice(ABC):
         batch_size: int = 1024,
         eval_iter: int = 100,
         num_workers: int = 4,
-        result_folder: str = None
+        result_folder: str = None,
+        silent: bool = False
     ):
         check_scalar(num_steps, name='num_steps', target_type=int, min_val=1)
         check_scalar(batch_size, name='batch_size', target_type=int, min_val=1)
@@ -274,20 +280,19 @@ class Dice(ABC):
             persistent_workers=False,
             generator=self._torch_generator
         )
-
-        tqdm_iterator = tqdm(loader, total=num_steps)
-        for i, batch in enumerate(tqdm_iterator):
+        iterator = loader if silent else tqdm(loader, total=num_steps)
+        for i, batch in enumerate(iterator):
             if i >= num_steps:
                 break
 
             initial_, td_, q_, w_ = self.objective_function(
-                first_state=batch[0],
-                first_action=batch[1],
-                state=batch[2],
-                action=batch[3],
-                reward=batch[4],
-                next_state=batch[5],
-                next_action=batch[6]
+                first_state=batch[0].to(self._device),
+                first_action=batch[1].to(self._device),
+                state=batch[2].to(self._device),
+                action=batch[3].to(self._device),
+                reward=batch[4].to(self._device),
+                next_state=batch[5].to(self._device),
+                next_action=batch[6].to(self._device)
             )
             loss = initial_ + td_ + q_ - w_
 
@@ -318,9 +323,10 @@ class Dice(ABC):
                 if result_folder is not None:
                     self._report_value(value)
 
-            tqdm_iterator.set_description(
-                f'loss: {loss.item():.4f}; value: {value:.4f}'
-            )
+            if not silent:
+                iterator.set_description(
+                    f'loss: {loss.item():.4f}; value: {value:.4f}'
+                )
 
             if result_folder is not None:
                 self._report_loss(
