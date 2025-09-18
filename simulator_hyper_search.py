@@ -197,7 +197,7 @@ class Objective:
             hidden_dim=trial.suggest_categorical('hidden_dim', [16, 32, 64, 128, 256]),
             is_multihead=bool(trial.suggest_categorical('is_multihead', [0, 1])),
             gamma=0.99,
-            lr=trial.suggest_float('learning_rate', low=1e-05, high=1e-02, log=True),
+            lr=trial.suggest_float('learning_rate', low=5e-07, high=1e-03, log=True),
             f1_func=DiceFunctions.DUAL_DICE_P_3_2,
             f2_func=reg_func_dict[trial.suggest_categorical('f2', list(reg_func_dict.keys()))],
             method_name=trial.suggest_categorical('method_name', ['dual_dice', 'best_dice']),

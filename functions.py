@@ -14,7 +14,7 @@ class DiceFunctions(Enum):
     CHI_SQUARED         = lambda x: (x - 1) ** 2 / 2
     NEYMAN_CHI_SQUARED  = lambda x: (x - 1) ** 2
     PEARSON_CHI_SQUARED = lambda x: (x - 1) ** 2 / x
-    KL_DIVERGENCE       = lambda x: x * torch.log(torch.abs(x))
+    KL_DIVERGENCE       = lambda x: x * torch.log(torch.abs(x) + 1e-06)
 
 
 class StateActionNetwork(nn.Module):
