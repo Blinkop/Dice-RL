@@ -119,7 +119,9 @@ class Dice(ABC):
             'value_per_step' : []
         }
 
-    def _write_experiment_data(self, experiment_name: str):
+    def _write_experiment_data(self, experiment_name: str, postfix: str):
+        postfix = '' if postfix is None else f'_{postfix}'
+
         exp_folder = Path(f"experiments/{experiment_name}")
         exp_folder.mkdir(parents=True, exist_ok=True)
 
@@ -138,11 +140,11 @@ class Dice(ABC):
             'seed' : self._seed
         }
 
-        with open(exp_folder / "parameters.json", 'w') as f:
+        with open(exp_folder / f"parameters{postfix}.json", 'w') as f:
             json.dump(params, f, indent="\t")
 
         np.save(
-            exp_folder / "values.npy",
+            exp_folder / f"values{postfix}.npy",
             np.array(self._experiment_data['value_per_step'])
         )
 
@@ -154,13 +156,13 @@ class Dice(ABC):
         plt.plot(self._experiment_data['w_reg_loss'], alpha=0.7, label='w reg')
         plt.plot(self._experiment_data['loss'], alpha=0.7, label='loss')
         plt.legend()
-        plt.savefig(exp_folder / "losses.png", bbox_inches="tight")
+        plt.savefig(exp_folder / f"losses{postfix}.png", bbox_inches="tight")
         plt.close()
 
         sns.set_theme()
         plt.title(f"values")
         plt.plot(self._experiment_data['value_per_step'])
-        plt.savefig(exp_folder / "values.png", bbox_inches="tight")
+        plt.savefig(exp_folder / f"values{postfix}.png", bbox_inches="tight")
         plt.close()
 
     def _report_loss(
@@ -227,6 +229,7 @@ class Dice(ABC):
         eval_iter: int = 100,
         num_workers: int = 4,
         result_folder: str = None,
+        result_postfix: str = None,
         silent: bool = False
     ):
         check_scalar(num_steps, name='num_steps', target_type=int, min_val=1)
@@ -335,7 +338,9 @@ class Dice(ABC):
                 )
 
         if result_folder is not None:
-            self._write_experiment_data(result_folder)
+            self._write_experiment_data(
+                result_folder, postfix=result_postfix
+            )
 
 
     @torch.no_grad()

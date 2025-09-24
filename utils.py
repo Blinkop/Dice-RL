@@ -43,7 +43,7 @@ class DiceDatasetWrapper(IterableDataset):
                 generator=generator
             )
             t = torch.tensor([
-                torch.randint(0, l - 2, size=(1,), generator=generator)
+                torch.randint(0, l - 1, size=(1,), generator=generator)
                 for l in self._trajectory_len[idx]
             ], dtype=torch.long)
 
