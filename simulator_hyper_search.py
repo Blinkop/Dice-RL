@@ -25,10 +25,16 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
+        "-tv",
+        "--true_value",
+        help="ground truth value",
+        type=float,
+    )
+    parser.add_argument(
         "-na",
         "--num_actions",
         help="number of actions",
-        type=str,
+        type=int,
     )
     parser.add_argument(
         "-sp",
@@ -104,6 +110,7 @@ class Objective:
         rewards: List[np.ndarray],
         target_actions: List[np.ndarray],
         action_embs: torch.Tensor,
+        true_value: float,
         num_actions: int,
         artifact_store: FileSystemArtifactStore,
         tmp_folder: str,
@@ -122,6 +129,7 @@ class Objective:
 
         self._state_dim = self._states[0].shape[1]
         self._action_dim = self._action_embs.shape[1]
+        self._true_value = true_value
         self._num_actions = num_actions
 
     def _run_with_seed(self, params: Parameters, seed: int):
@@ -174,6 +182,7 @@ class Objective:
             eval_iter=params.eval_iter,
             num_workers=8,
             result_folder=self._tmp_folder, # concurrency issue
+            result_postfix=f'{seed}',
             silent=True
         )
 
@@ -189,19 +198,18 @@ class Objective:
             'p3' : DiceFunctions.P_3,
             'p_3_2' : DiceFunctions.DUAL_DICE_P_3_2,
             'chi_squared' : DiceFunctions.CHI_SQUARED,
-            'kl_divergence' : DiceFunctions.KL_DIVERGENCE
         }
 
         dice_params = self.Parameters(
             num_layers=trial.suggest_int('num_layers', low=2, high=4),
             hidden_dim=trial.suggest_categorical('hidden_dim', [16, 32, 64, 128, 256]),
-            is_multihead=bool(trial.suggest_categorical('is_multihead', [0, 1])),
+            is_multihead=False,
             gamma=0.99,
-            lr=trial.suggest_float('learning_rate', low=5e-07, high=1e-03, log=True),
+            lr=trial.suggest_float('learning_rate', low=2e-07, high=1e-03, log=True),
             f1_func=DiceFunctions.DUAL_DICE_P_3_2,
             f2_func=reg_func_dict[trial.suggest_categorical('f2', list(reg_func_dict.keys()))],
             method_name=trial.suggest_categorical('method_name', ['dual_dice', 'best_dice']),
-            num_steps=100000,
+            num_steps=500000,
             batch_size=8192,
             eval_iter=100
         )
@@ -225,17 +233,17 @@ class Objective:
 
             value_artifact_id = upload_artifact(
                 artifact_store=self._artifact_store,
-                file_path=f"experiments/{self._tmp_folder}/values.npy",
+                file_path=f"experiments/{self._tmp_folder}/values_{seed}.npy",
                 study_or_trial=trial
             )
             loss_plot_artifact_id = upload_artifact(
                 artifact_store=self._artifact_store,
-                file_path=f"experiments/{self._tmp_folder}/losses.png",
+                file_path=f"experiments/{self._tmp_folder}/losses_{seed}.png",
                 study_or_trial=trial
             )
             value_plot_artifact_id = upload_artifact(
                 artifact_store=self._artifact_store,
-                file_path=f"experiments/{self._tmp_folder}/values.png",
+                file_path=f"experiments/{self._tmp_folder}/values_{seed}.png",
                 study_or_trial=trial
             )
 
@@ -253,7 +261,7 @@ class Objective:
         trial.set_user_attr("mean w.mean()", np.mean(w_mean).item())
         trial.set_user_attr("mean w.max()", np.mean(w_max).item())
 
-        return np.sqrt((value_history[:, -300:].mean() - 0.3524044871067294)**2).item()
+        return np.abs(value_history[:, -300:].mean() - self._true_value).item()
 
 
 def main():
@@ -265,7 +273,7 @@ def main():
     target_actions = torch.load(args.target_actions_path, weights_only=False)
     action_embs = torch.load(args.action_emb_path, weights_only=False)
 
-    artifacts_folder = Path(f"./artifacts")
+    artifacts_folder = Path(f"./{args.model_name}_artifacts")
     artifacts_folder.mkdir(parents=True, exist_ok=True)
     artifact_store = FileSystemArtifactStore(base_path=str(artifacts_folder))
 
@@ -284,9 +292,10 @@ def main():
             rewards=rewards,
             target_actions=target_actions,
             action_embs=action_embs,
-            num_actions=int(args.num_actions),
+            true_value=args.true_value,
+            num_actions=args.num_actions,
             artifact_store=artifact_store,
-            tmp_folder="tmp",
+            tmp_folder=f"{args.model_name}_tmp",
             device=args.device
         ),
         n_trials=10000

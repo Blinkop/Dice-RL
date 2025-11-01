@@ -28,7 +28,7 @@ def parse_arguments():
         "-na",
         "--num_actions",
         help="number of actions",
-        type=str,
+        type=int,
     )
     parser.add_argument(
         "-sp",
@@ -319,7 +319,7 @@ def main():
             s1_actions=s1_actions,
             s2_actions=s2_actions,
             action_embs=action_embs,
-            num_actions=int(args.num_actions),
+            num_actions=args.num_actions,
             artifact_store=artifact_store,
             tmp_folder="tmp",
             device=args.device
